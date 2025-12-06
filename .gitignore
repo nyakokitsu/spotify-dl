@@ -1,2 +1,6 @@
 /target
 Cargo.lock
+gen.py
+/Saved
+.cache
+.DS_Store

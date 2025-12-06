@@ -1,14 +1,10 @@
-
-use std::process::exit;
 use librespot::{
     core::{
-        authentication::Credentials,
-        config::SessionConfig,
+        SpotifyUri,
         session::Session,
-        spotify_id::{SpotifyId, SpotifyItemType},
     },
     playback::{
-        config::{AudioFormat, PlayerConfig},
+        config::{PlayerConfig},
         mixer::NoOpVolume,
         player::Player,
     },
@@ -24,27 +20,18 @@ use crate::encoder::EncodedStream;
 
 
 
-pub async fn download(trackid: &str, token: &str) -> (EncodedStream, String, String) {
-    let session_config = SessionConfig::default();
-    let player_config = PlayerConfig::default();
-    let audio_format = AudioFormat::default();
-
-    let credentials = Credentials::with_access_token(token);
-
+pub async fn download(trackid: &str, session: Session) -> (EncodedStream, String, String, Option<String>) {
     let trid = trackid;
     println!("Track id: {}", trid);
-    let mut track = SpotifyId::from_base62(&*trackid).unwrap();
-    track.item_type = SpotifyItemType::Track;
+    let track = SpotifyUri::from_uri(&*trackid).unwrap();
 
-    println!("Connecting...");
-    let session = Session::new(session_config, None);
-    if let Err(e) = session.connect(credentials, false).await {
-        println!("Error connecting: {}", e);
-        exit(1);
-    }
-    println!("Connected!");
-    let track_obj = Track::from_id(track);
+    let player_config = PlayerConfig::default();
+
+    let track_obj = Track::from_id(track.clone());
     let metadata = track_obj.metadata(&session).await.ok().unwrap();
+
+    let cover_id = metadata.cover_url.clone();
+
     let artists = metadata
         .artists
         .iter()
@@ -75,7 +62,7 @@ pub async fn download(trackid: &str, token: &str) -> (EncodedStream, String, Str
     println!("Downloading...");
     while let Some(event) = sink_channel.recv().await {
         match event {
-            SinkEvent::Write { bytes, total, mut content } => {
+            SinkEvent::Write { bytes: _, total: _, mut content } => {
                 samples.append(&mut content);
             }
             SinkEvent::Finished => {
@@ -88,5 +75,5 @@ pub async fn download(trackid: &str, token: &str) -> (EncodedStream, String, Str
     let samples = Samples::new(samples, 44100, 2, 16);
     let encoder = crate::encoder::get_encoder(Format::Mp3);
     let stream = encoder.encode(samples).await.ok().unwrap();
-    return (stream, artists, track_name);
+    return (stream, artists, track_name, cover_id);
 }
